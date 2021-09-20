@@ -128,13 +128,15 @@ def playlist_m3u(playlist_info=None, full_urls=True):
     raise Exception(playlist_info)
   playlist_url = playlist_info['playlist_url']
   playlist_m3u = call_api(playlist_url, output="text")
+  if not isinstance(playlist_m3u, str):
+      return playlist_m3u
+
   if full_urls:
     # The m3u contains relative urls, add the host.
     playlist_host = '://'.join(urllib.parse.urlsplit(playlist_url)[:2])
     playlist_m3u = playlist_m3u.replace(
       '/stream', playlist_host + '/stream')
   return playlist_m3u
-
 
 
 def parse_args():

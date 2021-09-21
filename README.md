@@ -27,8 +27,10 @@ Running the install will create two programs, `tldl` (Tablo downloader) and
 - `tldl --createdb` - Create a database of tablo recordings in `~/.tablodldb`.
   This can take several minutes to complete.
 - `tldl --updatedb` - Update your database of tablo recordings. This can be
-  run anytime and is quick.
+  run anytime and is quick if you have previously created the db.
 - `tldl --dump` - Displays a summary of every recording.
+- `tldl --recording_details --recording_id /recordings/series/episodes/422108`
+  - Displays all the information available about a recording.
 - `tldlapis -h` - See a list of all the API calls you can make directly to
   your Tablo devices using this program.  
 

@@ -4,6 +4,7 @@ import argparse
 import json
 import logging
 import os
+import pprint
 # import subprocess
 import sys
 # import tempfile
@@ -174,6 +175,7 @@ def recording_details(metadata):
   res['year'] = dtls.get('movie_airing', {}).get('release_year')
 
   res['episode_title'] = dtls.get('episode', {}).get('title')
+  res['episode_date'] = dtls.get('episode', {}).get('orig_air_date')
   res['episode_description'] = dtls.get('episode', {}).get('description')
   res['episode_season'] = dtls.get('episode', {}).get('season_number')
   res['episode_number'] = dtls.get('episode', {}).get('number')
@@ -203,6 +205,8 @@ def dump_recordings(recordings):
         print('Episode: %s' % dtls['episode_title'])
       if dtls['episode_description']:
         print('Desc:    %s' % dtls['episode_description'])
+      if dtls['episode_date']:
+        print('Airing:  %s' % dtls['episode_date'])
       if dtls['episode_season']:
         print('Season:  %s' % dtls['episode_season'])
       if dtls['episode_number']:
@@ -232,6 +236,10 @@ def parse_args_and_settings():
     help='One or more IPs of Tablo device(s) separated by semicolons',
   )
   parser.add_argument(
+    '--recording_id',
+    help='A Tablo recording ID',
+  )
+  parser.add_argument(
     '--updatedb',
     action='store_true',
     help='Update Tablo recordings DB. This may take a while.',
@@ -245,6 +253,11 @@ def parse_args_and_settings():
     '--dump',
     action='store_true',
     help='Dump Tablo recordings DB.',
+  )
+  parser.add_argument(
+    '--recording_details',
+    action='store_true',
+    help='Display details of a Tablo recording.',
   )
   parser.add_argument(
     '--test_flow',
@@ -267,6 +280,9 @@ def main():
 
   if args.createdb or args.updatedb:
     create_or_update_recordings_database(args)
+
+  if args.recording_details:
+    pprint.pprint(apis.recording_details(args.recording_id, args.tablo_ips))
 
   if args.dump:
     recordings = load_recordings_db()

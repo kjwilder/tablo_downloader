@@ -1,7 +1,7 @@
 # tablo-downloader
-Query a Tablo device to get and manage a list of recordings and then download
-the recordings to local MPEG4 files using `ffmpeg`. This is being actively
-developed. Feel free to create issues.
+Query one or more Tablo devices to get and manage a list of recordings and
+then download the recordings to local MPEG4 files using `ffmpeg`. This
+is an actively developed project. Feel free to create issues.
 
 ### Install
 - `git clone https://github.com/kjwilder/tablo_downloader`
@@ -11,8 +11,8 @@ Running the install will create two programs, `tldl` (Tablo downloader) and
 `tldlapis` (Tablo downloader APIs).
 
 ### Preliminaries.
-- You can provide default values for any flags in `~/.tablodlr`. The format is
-  json. If you have on Tablo device whose IP is `192.168.1.25`, a bare-bones config
+- You can provide default values for any flags in `~/.tablodlrc`. The format is
+  json. If you have a Tablo device whose IP is `192.168.1.25`, a bare-bones config
   might look like the following:
   ```
   {

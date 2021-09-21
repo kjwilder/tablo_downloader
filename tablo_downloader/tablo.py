@@ -170,10 +170,18 @@ def recording_details(metadata):
   dtls = metadata['details']
   res = {}
   res['show_title'] = dtls.get('airing_details', {}).get('show_title', 'UNKNOWN')
-  res['episode_title'] = dtls.get('episode', {}).get('title')
+
   res['year'] = dtls.get('movie_airing', {}).get('release_year')
-  res['season'] = dtls.get('episode', {}).get('season_number')
-  res['number'] = dtls.get('episode', {}).get('number')
+
+  res['episode_title'] = dtls.get('episode', {}).get('title')
+  res['episode_description'] = dtls.get('episode', {}).get('description')
+  res['episode_season'] = dtls.get('episode', {}).get('season_number')
+  res['episode_number'] = dtls.get('episode', {}).get('number')
+
+  res['event_title'] = dtls.get('event', {}).get('title')
+  res['event_description'] = dtls.get('event', {}).get('description')
+  res['event_season'] = dtls.get('event', {}).get('season')
+
   res['path'] = dtls.get('path')
   return res
 
@@ -189,14 +197,22 @@ def dump_recordings(recordings):
     for dtls in sorted(details[ip].values(), key=lambda k: k['show_title']):
       # dtls = details[ip][recording]
       print('Title:   %s' % dtls.get('show_title', 'UNKNOWN'))
-      if dtls['episode_title']:
-        print('Episode: %s' % dtls['episode_title'])
       if dtls['year']:
         print('Year:    %s' % dtls['year'])
-      if dtls['season']:
-        print('Season:  %s' % dtls['season'])
-      if dtls['number']:
-        print('Number:  %s' % dtls['number'])
+      if dtls['episode_title']:
+        print('Episode: %s' % dtls['episode_title'])
+      if dtls['episode_description']:
+        print('Desc:    %s' % dtls['episode_description'])
+      if dtls['episode_season']:
+        print('Season:  %s' % dtls['episode_season'])
+      if dtls['episode_number']:
+        print('Number:  %s' % dtls['episode_number'])
+      if dtls['event_title']:
+        print('Event:   %s' % dtls['episode_title'])
+      if dtls['event_description']:
+        print('Desc:    %s' % dtls['event_description'])
+      if dtls['event_season']:
+        print('Season:  %s' % dtls['event_season'])
       print('Path:    %s\n' % dtls['path'])
       # :w 'category': 'sports', 'details': {'object_id': 60505, 'path': '/recordings/sports/events/60505', 'sport_path': '/recordings/sports/17652', 'snapshot_image': {'image_id': 63247, 'has_title': False}, 'airing_details': {'datetime': '2020-12-07T01:20Z', 'duration': 11400, 'channel_path': '/recordings/channels/60506', 'channel': {'object_id': 60506, 'path': '/recordings/channels/60506', 'channel': {'call_sign': 'WKYC-HD', 'call_sign_src': 'WKYC-HD', 'major': 3, 'minor': 1, 'network': 'NBC', 'resolution': 'hd_1080'}}, 'show_title': 'NFL Football'}, 'video_details': {'state': 'finished', 'clean': True, 'cloud': False, 'uploading': False, 'audio': 'aac', 'size': 9388068864, 'duration': 17115, 'width': 1280, 'height': 720, 'schedule_offsets': {'start': -15, 'end': 5704, 'deprecated': True}, 'recorded_offsets': {'start': -15, 'end': 5704}, 'airing_offsets': {'start': 0, 'end': 0, 'source': 'none'}, 'seek': 15, 'error': None, 'warnings': []}, 'user_info': {'position': 1882, 'watched': False, 'protected': False}, 'event': {'title': 'Denver Broncos at Kansas City Chiefs', 'description': 'The Chiefs (10-1) try for their 11th straight victory over the Broncos (4-7). Kansas City continued to roll against AFC West rival Denver with a 43-16 Week 7 victory. The Chiefs have won six in a row after holding off the Buccaneers 27-24 last week.', 'season': '2020-2021', 'season_type': 'regular', 'venue': None, 'teams': [{'name': 'Denver Broncos', 'team_id': 40}, {'name': 'Kansas City Chiefs', 'team_id': 46}], 'home_team_id': 46, 'tms_id': 'EP000031282618'}, 'qualifiers': ['cc']}, 'playlist': {'token': '9201e306-a673-43fd-a13d-a2a7145566e3', 'expires': '2021-09-19T06:28:26Z', 'playlist_url': 'http://192.168.10.49:80/stream/pl.m3u8?Ser1_cMhzMf6zBHpB2-l6A', 'bif_url_sd': 'http://192.168.10.49:80/stream/bif?Ser1_cMhzMf6zBHpB2-l6A', 'bif_url_hd': 'http://192.168.10.49:80/stream/bif?Ser1_cMhzMf6zBHpB2-l6A&hd', 'video_details': {'width': 0, 'height': 0}}}
 

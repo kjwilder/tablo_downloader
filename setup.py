@@ -3,7 +3,7 @@
 from setuptools import setup
 
 setup(
-  name='Distutils',
+  name='tablo_downloader',
   version='1.0',
   description='Tablo download utilities',
   license='UNLICENSE',
@@ -13,6 +13,6 @@ setup(
   packages=['tablo_downloader'],
   install_requires=["requests"],
   entry_points={"console_scripts": [
-          'tld = tablo_downloader.tablo:main',
-          'tldapis = tablo_downloader.apis:main']},
+          'tldl = tablo_downloader.tablo:main',
+          'tldlapis = tablo_downloader.apis:main']},
 )

@@ -11,7 +11,7 @@ Running the install will create two programs, `tldl` (Tablo downloader) and
 `tldlapis` (Tablo downloader APIs).
 
 ### Preliminaries.
-- You can provide default values for any flags in `~/.tablodlr`. The format is
+- You can provide default values for any flags in `~/.tablodlrc`. The format is
   json. If you have a Tablo device whose IP is `192.168.1.25`, a bare-bones config
   might look like the following:
   ```

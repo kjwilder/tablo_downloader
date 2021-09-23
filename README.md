@@ -1,7 +1,6 @@
 # tablo-downloader
 Query one or more Tablo devices to get and manage a list of recordings and
-then download the recordings to local MPEG4 files using `ffmpeg`. This
-is an actively developed project. Feel free to create issues.
+then download the recordings to local MPEG4 files using `ffmpeg`.
 
 ### Install
 - `git clone https://github.com/kjwilder/tablo_downloader`

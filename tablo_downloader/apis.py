@@ -7,38 +7,46 @@ TABLO_INFO_PORT = 8885
 CHANNELS_URL = 'http://{ip}:%s/guide/channels' % TABLO_INFO_PORT
 CHANNEL_DETAILS_URL = 'http://{ip}:%s{channel_id}' % TABLO_INFO_PORT
 
-RCRDS_URL = 'http://{ip}:%s/recordings/airings' % TABLO_INFO_PORT
+IMAGE_URL = 'http://{ip}:%s/images/{image_id}' % TABLO_INFO_PORT
+
+RCRDS_LIST_URL = 'http://{ip}:%s/recordings/airings' % TABLO_INFO_PORT
 RCRD_DETAILS_URL = 'http://{ip}:%s{recording_id}' % TABLO_INFO_PORT
+
+SERIES_LIST_URL = 'http://{ip}:%s/recordings/series' % TABLO_INFO_PORT
+SERIES_DETAILS_URL = ('http://{ip}:%s/recordings/series/{series_id}' %
+                      TABLO_INFO_PORT)
 
 PLAYLIST_URL = 'http://{ip}:%s{id}/watch' % TABLO_INFO_PORT
 
 SETTINGS_URL = 'http://{ip}:%s/settings/info' % TABLO_INFO_PORT
+
 SRVR_INFORMATION_URL = 'http://{ip}:%s/server/info' % TABLO_INFO_PORT
 SRVR_CAPABILITIES_URL = 'http://{ip}:%s/server/capabilities' % TABLO_INFO_PORT
 
 
 def call_api(url, method="GET", output="json"):
-    requestor = getattr(requests, method.lower())
+    requester = getattr(requests, method.lower())
 
     try:
-        req = requestor(url)
+        req = requester(url)
     except Exception as e:
         return {
             'error': 'API call [%s] failed' % url,
             'exception': e
         }
 
-    try:
-        if output == "json":
+    if output == "json":
+        try:
             res = req.json()
-        elif output == "text":
-            res = req.text
-        else:
-            return {'error': 'call_api unknown output [%s]' % output}
-    except Exception:
-        return {
-            'error': 'call_api API [%s] invalid value [%s]' % (url, req.text)
-        }
+        except Exception as e:
+            res = {
+                'error': 'API [%s] invalid json [%s]' % (url, req.text),
+                'exception': e
+            }
+    elif output == "text":
+        res = req.text
+    else:
+        res = {'error': 'API [%s] unknown format [%s]' % (url, output)}
     return res
 
 
@@ -72,9 +80,15 @@ def server_channels(ip):
 
 
 def server_recordings(ip):
-    """Get a list of recording identifiers for a Tablo server."""
-    url = RCRDS_URL.format(ip=ip)
+    """Get a list of recording IDs for a Tablo server."""
+    url = RCRDS_LIST_URL.format(ip=ip)
     return call_api(url)
+
+
+def delete_recording(ip, recording_id):
+    """Delete a recording from a Tablo server."""
+    url = RCRD_DETAILS_URL.format(ip=ip, recording_id=recording_id)
+    return call_api(url, method='DELETE', output='text')
 
 
 def recording_details(ip, recording_id=None):
@@ -177,9 +191,15 @@ def parse_args():
 
     api = apis.add_parser(
         'recordings',
-        help=('Get recording identifiers for a Tablo server'),
+        help=('Get recording IDs for a Tablo server'),
     )
     api.set_defaults(func=server_recordings)
+
+    api = apis.add_parser(
+        'delete_recording',
+        help=('Delete a recording'),
+    )
+    api.set_defaults(func=delete_recording)
 
     api = apis.add_parser(
         'recording_details',
@@ -213,18 +233,30 @@ def main():
 
     api_func = args.func
     api_args = {x: None for x in inspect.getfullargspec(api_func).args}
+    args_args = vars(args)
+    for arg in api_args:
+        if args_args.get(arg):
+            api_args[arg] = args_args[arg]
 
+    tablo_ips = {}
     if 'ip' in api_args:
         if args.tablo_ips:
             tablo_ips = args.tablo_ips.split(',')
         else:
             tablo_ips = {x['private_ip'] for x in local_server_info()['cpes']}
-        for ip in tablo_ips:
-            api_args['ip'] = ip
-            print('Tablo device [%s]' % ip)
-            pprint.pprint(args.func(**api_args))
-            print()
-        return
+        if not tablo_ips:
+            raise ValueError('Unable to determine any Tablo IPs')
+
+    if tablo_ips:
+        if len(api_args) == 1:
+            for ip in tablo_ips:
+                api_args['ip'] = ip
+                print('Tablo device [%s]' % ip)
+                pprint.pprint(args.func(**api_args))
+                print()
+            return
+        else:
+            api_args['ip'] = tablo_ips.pop()  # Arbitrarily pick one.
 
     pprint.pprint(args.func(**api_args))
 

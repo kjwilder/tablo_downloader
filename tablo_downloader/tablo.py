@@ -25,20 +25,21 @@ TABLO_DATABASE_FILE = '.tablodldb'
 
 
 def load_settings():
+    """Load settings from JSON file /home_directory/{TABLO_SETTINGS_FILE}."""
     settings = {}
-    settings_file = os.path.join(os.path.expanduser("~"), TABLO_SETTINGS_FILE)
-    if os.path.exists(settings_file):
-        LOGGER.debug('Loading settings from [%s]', settings_file)
-        with open(settings_file) as f:
+    sfile = os.path.join(os.path.expanduser("~"), TABLO_SETTINGS_FILE)
+    if os.path.exists(sfile) and os.path.getsize(sfile) > 0:
+        LOGGER.debug('Loading settings from [%s]', sfile)
+        with open(sfile) as f:
             settings = json.load(f)
     return settings
 
 
 def load_recordings_db():
     recordings = {}
-    recordings_file = os.path.join(os.path.expanduser("~"), TABLO_DATABASE_FILE)
-    if os.path.exists(recordings_file):
-        with open(recordings_file) as f:
+    rfile = os.path.join(os.path.expanduser("~"), TABLO_DATABASE_FILE)
+    if os.path.exists(rfile) and os.path.getsize(rfile) > 0:
+        with open(rfile) as f:
             recordings = json.load(f)
     return recordings
 
@@ -66,65 +67,99 @@ def recording_metadata(ip, recording):
     return res
 
 
-def title_and_filename(metadata):
-    category = metadata['category']
-    details = metadata['details']
+def recording_summary(metadata):
+    dtls = metadata['details']
+    res = {
+        'category': metadata['category'],
+        'episode_date': None,
+        'episode_description': None,
+        'episode_number': None,
+        'episode_season': None,
+        'episode_title': None,
+        'event_description': None,
+        'event_season': None,
+        'event_title': None,
+        'movie_year': None,
+        'path': dtls.get('path'),
+        'show_time': dtls.get('airing_details', {}).get('datetime'),
+        'show_title': dtls.get('airing_details', {}).get('show_title'),
+    }
+    if metadata['category'] == 'movies':
+        res['movie_year'] = dtls.get('movie_airing', {}).get('release_year')
+    elif metadata['category'] == 'series':
+        res['episode_title'] = dtls.get('episode', {}).get('title')
+        res['episode_date'] = dtls.get('episode', {}).get('orig_air_date')
+        res['episode_description'] = dtls.get('episode', {}).get('description')
+        res['episode_season'] = dtls.get('episode', {}).get('season_number')
+        res['episode_number'] = dtls.get('episode', {}).get('number')
+    elif metadata['category'] == 'sports':
+        res['event_title'] = dtls.get('event', {}).get('title')
+        res['event_description'] = dtls.get('event', {}).get('description')
+        res['event_season'] = dtls.get('event', {}).get('season')
+    return res
 
-    show_title = details.get('airing_details', {}).get('show_title', '')
+
+def title_and_filename(summary):
+    show_title = summary['show_title']
     if not show_title:
-        # TODO: Give unique default.
-        show_title = 'UNKNOWN'
-    year = None
-    filename = show_title
-    title = show_title
-    if category == 'movies':
-        year = details.get('movie_airing', {}).get('release_year')
+        show_title = 'UNKNOWN'  # TODO: Give better default?
+    filename, title = show_title, show_title
+    if summary['category'] == 'movies':
+        year = summary['movie_year']
         if isinstance(year, int):
-            title += f'_({year})'
-    elif category == 'series':
-        season = details.get('episode', {}).get('season_number', 'XX')
-        if isinstance(season, int):
-            season = '%02d' % int(season)
-
-        number = details.get('episode', {}).get('number', 'XX')
-        if isinstance(number, int):
-            number = '%02d' % int(number)
-
-        filename += f'_-_S{season}E{number}'
-
-        episode_title = details.get('episode', {}).get('title')
+            filename += f' ({year})'
+    elif summary['category'] == 'series':
+        episode_title = summary['episode_title']
         if episode_title:
             filename += f'_-_{episode_title}'
             title += f' - {episode_title}'
 
-        year = details.get('episode', {}).get('orig_air_date', '')[:4]
-        if year.isdigit():
-            filename += f'_({year})'
+        season = summary['episode_season']
+        if isinstance(season, int) and season > 0:
+            season = '%02d' % int(season)
+        number = summary['episode_number']
+        if isinstance(number, int) and number > 0:
+            number = '%02d' % int(number)
+            if not season:
+                season = '00'
+        if season:
+            filename += f'_-_S{season}E{number}'
+            title += f' - S{season}E{number}'
+    elif summary['category'] == 'sports':
+        event_title = summary['event_title']
+        if event_title:
+            filename += f'_-_{event_title}'
+            title += f' - {event_title}'
+        show_time = summary['show_time']
+        if show_time:
+            filename += f'_-_{show_time[:10]}'
+            title += f' - {show_time[:10]}'
     else:
         return None, None
-    filename = ('/Volumes/Files/%s.mp4' % filename).replace(' ', '_')
+    filename = ('%s.mp4' % filename).replace(' ', '_')
     return title, filename
 
 
 def test_flow(args):
-    if args.tablo_ip:
-        tablo_ips = {x for x in args.tablo_ip.split(',') if x}
-    else:
-        tablo_ips = local_ips()
-    for ip in tablo_ips:
-        for recording in apis.server_recordings(ip):
+    recordings = load_recordings_db()
+    if not recordings:
+        LOGGER.error('No recordings database.')
+        return
+
+    for ip in recordings:
+        for recording in recordings[ip]:
             LOGGER.debug('[ip recording] = [%s %s]', ip, recording)
-            curr = recording_metadata(ip, recording)
+            curr = recordings[ip][recording]
             if curr['playlist'].get('error'):  # Recording failed.
-                LOGGER.info('No playlist for [%s]', recording)
                 continue
 
             playlist_m3u = apis.playlist_m3u(curr['playlist'])
 
-            title, filename = title_and_filename(curr)
+            title, filename = title_and_filename(recording_summary(curr))
             if not title:
                 continue
 
+            filename = os.path.join(args.recordings_directory, filename)
             m3u_file = open('temp.m3u', 'w')
             m3u_file.write(playlist_m3u)
             m3u_file.close()
@@ -162,7 +197,7 @@ def create_or_update_recordings_database(args):
         obsolete_db_recordings = {
                 r for r in recordings_by_ip[ip] if r not in server_recordings}
         for recording in obsolete_db_recordings:
-            LOGGER.debug('Removing recording [%s %s]', ip, recording)
+            LOGGER.debug('Removing deleted recording [%s %s]', ip, recording)
             del recordings_by_ip[ip][recording]
         # Add new recordings.
         for recording in server_recordings:
@@ -175,60 +210,47 @@ def create_or_update_recordings_database(args):
     save_recordings_db(recordings_by_ip)
 
 
-def recording_details(metadata):
-    dtls = metadata['details']
-    res = {}
-    res['show_title'] = dtls.get('airing_details',
-                                 {}).get('show_title', 'UNKNOWN')
-
-    res['year'] = dtls.get('movie_airing', {}).get('release_year')
-
-    res['episode_title'] = dtls.get('episode', {}).get('title')
-    res['episode_date'] = dtls.get('episode', {}).get('orig_air_date')
-    res['episode_description'] = dtls.get('episode', {}).get('description')
-    res['episode_season'] = dtls.get('episode', {}).get('season_number')
-    res['episode_number'] = dtls.get('episode', {}).get('number')
-
-    res['event_title'] = dtls.get('event', {}).get('title')
-    res['event_description'] = dtls.get('event', {}).get('description')
-    res['event_season'] = dtls.get('event', {}).get('season')
-
-    res['path'] = dtls.get('path')
-    return res
-
-
 def dump_recordings(recordings):
-    details = {}
-    for ip in recordings:
-        if ip not in details:
-            details[ip] = {}
-        for recording in recordings[ip]:
-            details[ip][recording] = recording_details(
-                recordings[ip][recording])
-    for ip in sorted(details):
-        for dtls in sorted(details[ip].values(), key=lambda k: k['show_title']):
-            # dtls = details[ip][recording]
-            print('Title:   %s' % dtls.get('show_title', 'UNKNOWN'))
-            if dtls['year']:
-                print('Year:    %s' % dtls['year'])
-            if dtls['episode_title']:
-                print('Episode: %s' % dtls['episode_title'])
-            if dtls['episode_description']:
-                print('Desc:    %s' % dtls['episode_description'])
-            if dtls['episode_date']:
-                print('Airing:  %s' % dtls['episode_date'])
-            if dtls['episode_season']:
-                print('Season:  %s' % dtls['episode_season'])
-            if dtls['episode_number']:
-                print('Number:  %s' % dtls['episode_number'])
-            if dtls['event_title']:
-                print('Event:   %s' % dtls['episode_title'])
-            if dtls['event_description']:
-                print('Desc:    %s' % dtls['event_description'])
-            if dtls['event_season']:
-                print('Season:  %s' % dtls['event_season'])
-            print('Path:    %s\n' % dtls['path'])
-            # :w 'category': 'sports', 'details': {'object_id': 60505, 'path': '/recordings/sports/events/60505', 'sport_path': '/recordings/sports/17652', 'snapshot_image': {'image_id': 63247, 'has_title': False}, 'airing_details': {'datetime': '2020-12-07T01:20Z', 'duration': 11400, 'channel_path': '/recordings/channels/60506', 'channel': {'object_id': 60506, 'path': '/recordings/channels/60506', 'channel': {'call_sign': 'WKYC-HD', 'call_sign_src': 'WKYC-HD', 'major': 3, 'minor': 1, 'network': 'NBC', 'resolution': 'hd_1080'}}, 'show_title': 'NFL Football'}, 'video_details': {'state': 'finished', 'clean': True, 'cloud': False, 'uploading': False, 'audio': 'aac', 'size': 9388068864, 'duration': 17115, 'width': 1280, 'height': 720, 'schedule_offsets': {'start': -15, 'end': 5704, 'deprecated': True}, 'recorded_offsets': {'start': -15, 'end': 5704}, 'airing_offsets': {'start': 0, 'end': 0, 'source': 'none'}, 'seek': 15, 'error': None, 'warnings': []}, 'user_info': {'position': 1882, 'watched': False, 'protected': False}, 'event': {'title': 'Denver Broncos at Kansas City Chiefs', 'description': 'The Chiefs (10-1) try for their 11th straight victory over the Broncos (4-7). Kansas City continued to roll against AFC West rival Denver with a 43-16 Week 7 victory. The Chiefs have won six in a row after holding off the Buccaneers 27-24 last week.', 'season': '2020-2021', 'season_type': 'regular', 'venue': None, 'teams': [{'name': 'Denver Broncos', 'team_id': 40}, {'name': 'Kansas City Chiefs', 'team_id': 46}], 'home_team_id': 46, 'tms_id': 'EP000031282618'}, 'qualifiers': ['cc']}, 'playlist': {'token': '9201e306-a673-43fd-a13d-a2a7145566e3', 'expires': '2021-09-19T06:28:26Z', 'playlist_url': 'http://192.168.10.49:80/stream/pl.m3u8?Ser1_cMhzMf6zBHpB2-l6A', 'bif_url_sd': 'http://192.168.10.49:80/stream/bif?Ser1_cMhzMf6zBHpB2-l6A', 'bif_url_hd': 'http://192.168.10.49:80/stream/bif?Ser1_cMhzMf6zBHpB2-l6A&hd', 'video_details': {'width': 0, 'height': 0}}}
+    summaries = {ip: {} for ip in recordings}
+    for ip, recs in recordings.items():
+        summaries[ip] = {r: recording_summary(recs[r]) for r in recs}
+    for ip in sorted(summaries):
+        for smry in sorted(summaries[ip].values(),
+                           key=lambda k: (k['show_title'],
+                                          k['episode_season'],
+                                          k['episode_number'],
+                                          k['show_time'])):
+            title = smry['show_title']
+            if not title:
+                title = 'UNKNOWN'
+            if smry['episode_season'] or smry['episode_number']:
+                title += ' ['
+                if smry['episode_season']:
+                    title += 'Season: %s' % smry['episode_season']
+                if smry['episode_number']:
+                    title += ' Number: %s' % smry['episode_number']
+                title += ']'
+            print('Title:   %s' % title)
+
+            if smry['movie_year']:
+                print('Year:    %s' % smry['movie_year'])
+            if smry['episode_title']:
+                print('Episode: %s' % smry['episode_title'])
+            if smry['episode_description']:
+                print('Desc:    %s' % smry['episode_description'][:70])
+            if smry['episode_date']:
+                print('Airing:  %s' % smry['episode_date'])
+            if smry['event_title']:
+                print('Event:   %s' % smry['episode_title'])
+            if smry['event_description']:
+                print('Desc:    %s' % smry['event_description'][:70])
+            if smry['event_season']:
+                print('Season:  %s' % smry['event_season'])
+            print('Path:    %s' % smry['path'])
+            titletag, filename = title_and_filename(smry)
+            print('Title Tag: %s' % titletag)
+            print('Filename : %s' % filename)
+            print('\n')
 
 
 def parse_args_and_settings():
@@ -248,6 +270,15 @@ def parse_args_and_settings():
     parser.add_argument(
         '--recording_id',
         help='A Tablo recording ID',
+    )
+    parser.add_argument(
+        '--recordings_directory',
+        help='A directory to store Tablo recordings',
+    )
+    parser.add_argument(
+        '--delete_originals_after_downloading',
+        action='store_true',
+        help='Delete Tablo recordings after downloading them',
     )
     parser.add_argument(
         '--updatedb',
@@ -292,7 +323,7 @@ def main():
         create_or_update_recordings_database(args)
 
     if args.recording_details:
-        pprint.pprint(apis.recording_details(args.recording_id, args.tablo_ips))
+        pprint.pprint(apis.recording_details(recording_id=args.recording_id, ip=args.tablo_ips))
 
     if args.dump:
         recordings = load_recordings_db()

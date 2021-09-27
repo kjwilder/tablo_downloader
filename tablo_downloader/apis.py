@@ -1,5 +1,9 @@
+import logging
 import requests
 import urllib
+
+LOGGER = logging.getLogger(__name__)
+# LOGGER.setLevel(logging.DEBUG)
 
 TABLO_SERVERS_URL = 'https://api.tablotv.com/assocserver/getipinfo/'
 TABLO_INFO_PORT = 8885
@@ -25,6 +29,7 @@ SRVR_CAPABILITIES_URL = 'http://{ip}:%s/server/capabilities' % TABLO_INFO_PORT
 
 
 def call_api(url, method="GET", output="json"):
+    LOGGER.debug('[%s] [%s] [%s]', url, method, output)
     requester = getattr(requests, method.lower())
 
     try:
@@ -33,6 +38,12 @@ def call_api(url, method="GET", output="json"):
         return {
             'error': 'API call [%s] failed' % url,
             'exception': e
+        }
+
+    if req.status_code >= 300:
+        return {
+            'error': 'API call [%s] failed' % url,
+            'status_code': req.status_code
         }
 
     if output == "json":
@@ -47,6 +58,7 @@ def call_api(url, method="GET", output="json"):
         res = req.text
     else:
         res = {'error': 'API [%s] unknown format [%s]' % (url, output)}
+    LOGGER.debug('API [%s] result:\n%s', url, res)
     return res
 
 

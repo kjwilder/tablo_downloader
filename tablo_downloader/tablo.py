@@ -5,29 +5,28 @@ import json
 import logging
 import os
 import pprint
-# import subprocess
+import subprocess
 import sys
-# import tempfile
+import tempfile
 
 from tablo_downloader import apis
 
 LOGGER = logging.getLogger(__name__)
 LOGGER.setLevel(logging.INFO)
 HANDLER = logging.StreamHandler()
-# HANDLER = logging.StreamHandler(sys.stdout)
 HANDLER.setFormatter(
     logging.Formatter(
         '%(asctime)s %(levelname)s %(filename)s:%(lineno)s %(message)s'))
 LOGGER.addHandler(HANDLER)
 
-TABLO_SETTINGS_FILE = '.tablodlrc'
-TABLO_DATABASE_FILE = '.tablodldb'
+SETTINGS_FILE = '.tablodlrc'
+DATABASE_FILE = '.tablodldb'
 
 
 def load_settings():
-    """Load settings from JSON file /home_directory/{TABLO_SETTINGS_FILE}."""
+    """Load settings from JSON file /home_directory/{SETTINGS_FILE}."""
     settings = {}
-    sfile = os.path.join(os.path.expanduser("~"), TABLO_SETTINGS_FILE)
+    sfile = os.path.join(os.path.expanduser("~"), SETTINGS_FILE)
     if os.path.exists(sfile) and os.path.getsize(sfile) > 0:
         LOGGER.debug('Loading settings from [%s]', sfile)
         with open(sfile) as f:
@@ -37,7 +36,7 @@ def load_settings():
 
 def load_recordings_db():
     recordings = {}
-    rfile = os.path.join(os.path.expanduser("~"), TABLO_DATABASE_FILE)
+    rfile = os.path.join(os.path.expanduser("~"), DATABASE_FILE)
     if os.path.exists(rfile) and os.path.getsize(rfile) > 0:
         with open(rfile) as f:
             recordings = json.load(f)
@@ -45,7 +44,7 @@ def load_recordings_db():
 
 
 def save_recordings_db(recordings):
-    recordings_file = os.path.join(os.path.expanduser("~"), TABLO_DATABASE_FILE)
+    recordings_file = os.path.join(os.path.expanduser("~"), DATABASE_FILE)
     with open(recordings_file, 'w') as f:
         f.write(json.dumps(recordings))
 
@@ -63,7 +62,6 @@ def recording_metadata(ip, recording):
     res = {}
     res['category'] = recording.split('/')[2]
     res['details'] = apis.recording_details(ip, recording)
-    res['playlist'] = apis.playlist_info(ip, recording)
     return res
 
 
@@ -124,7 +122,12 @@ def title_and_filename(summary):
                 season = '00'
         if season:
             filename += f'_-_S{season}E{number}'
-            title += f' - S{season}E{number}'
+            if not episode_title:
+                title += f' - S{season}E{number}'
+
+        if not episode_title and not season:
+            filename += ' %s' % summary['show_time'][:10]
+
     elif summary['category'] == 'sports':
         event_title = summary['event_title']
         if event_title:
@@ -140,46 +143,86 @@ def title_and_filename(summary):
     return title, filename
 
 
-def test_flow(args):
+def download_recording(args):
+    ip = args.tablo_ips.split(',')[0]
+    recording_id = args.recording_id
+
     recordings = load_recordings_db()
     if not recordings:
-        LOGGER.error('No recordings database.')
+        LOGGER.error('No recordings database. Run with --updatedb to create.')
         return
 
-    for ip in recordings:
-        for recording in recordings[ip]:
-            LOGGER.debug('[ip recording] = [%s %s]', ip, recording)
-            curr = recordings[ip][recording]
-            if curr['playlist'].get('error'):  # Recording failed.
-                continue
+    recording = recordings.get(ip, {}).get(recording_id)
+    if not recording:
+        LOGGER.error(
+                'Recording [%s] on device [%s] not found', recording_id, ip)
+        return
 
-            playlist_m3u = apis.playlist_m3u(curr['playlist'])
+    playlist = apis.playlist_info(ip, recording_id)
+    if playlist.get('error'):
+        LOGGER.error('Recording [%s] on device [%s] failed', recording_id, ip)
+        return
 
-            title, filename = title_and_filename(recording_summary(curr))
-            if not title:
-                continue
+    title, filename = title_and_filename(recording_summary(recording))
+    if not title:
+        LOGGER.error('Unable to generate title for recording [%s] on '
+                     'device [%s]', ip, recording_id)
+        return
 
-            filename = os.path.join(args.recordings_directory, filename)
-            m3u_file = open('temp.m3u', 'w')
-            m3u_file.write(playlist_m3u)
-            m3u_file.close()
+    mp4_filename = os.path.join(args.recordings_directory, filename)
+    if args.dry_run:
+        if os.path.exists(mp4_filename):
+            if args.overwrite:
+                LOGGER.info('Dry run - Would overwrite existing download [%s]',
+                            mp4_filename)
+            else:
+                LOGGER.info('Dry run - Would skip existing download [%s]',
+                            mp4_filename)
+        if args.delete_originals_after_downloading:
+            LOGGER.info('Dry run - Would delete Tablo recording after '
+                        'successful download of [%s]', mp4_filename)
+        return
 
-            cmd = [
-                'ffmpeg', '-hide_banner', '-loglevel', 'warning',
-                '-protocol_whitelist', 'file,http,https,tcp,tls,crypto', '-i',
-                'temp.m3u', '-c', 'copy', '-metadata', f'title={title}',
-                filename
-            ]
-            LOGGER.debug('Running [%s]', ' '.join(cmd))
-            # subprocess.run(cmd)
-            break
+    if os.path.exists(mp4_filename):
+        if args.overwrite:
+            os.remove(mp4_filename)
+        else:
+            LOGGER.info('Cannot create destination [%s] exists.',
+                        mp4_filename)
+            return
+
+    m3u_data = apis.playlist_m3u(playlist)
+    if not isinstance(m3u_data, str):  # Some error occurred.
+        LOGGER.error(m3u_data)
+        return
+
+    m3u_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
+    m3u_filename = m3u_file.name
+    m3u_file.write(m3u_data)
+    m3u_file.close()
+
+    cmd = [
+        'ffmpeg', '-hide_banner', '-loglevel', 'warning',
+        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto', '-i',
+        m3u_filename, '-c', 'copy', '-metadata', f'title={title}',
+        mp4_filename
+    ]
+    LOGGER.debug('Running [%s]', ' '.join(cmd))
+
+    status = subprocess.run(cmd)
+    if status.returncode == 0:
+        LOGGER.info('Successfully Downloaded [%s]', mp4_filename)
+        if args.delete_originals_after_downloading:
+            LOGGER.info('Deleting Tablo recording [%s] on device [%s]',
+                        recording_id, ip)
+            apis.delete_recording(ip, recording_id)
+    else:
+        LOGGER.info('Failed to download [%s]', mp4_filename)
+    os.remove(m3u_filename)
 
 
 def create_or_update_recordings_database(args):
-    recordings_by_ip = {}
-    if args.updatedb:
-        recordings_by_ip = load_recordings_db()
-
+    recordings_by_ip = load_recordings_db()
     tablo_ips = {ip for ip in recordings_by_ip}
     if args.tablo_ips:
         tablo_ips |= {x for x in args.tablo_ips.split(',') if x}
@@ -202,12 +245,17 @@ def create_or_update_recordings_database(args):
         # Add new recordings.
         for recording in server_recordings:
             if recording not in recordings_by_ip[ip]:
-                LOGGER.info('Getting metadata for recording [%s]', recording)
+                LOGGER.info('Getting metadata for new recording [%s]', recording)
                 recordings_by_ip[ip][recording] = recording_metadata(
                     ip, recording)
-            else:
-                LOGGER.debug('Skipping known recording [%s %s]', ip, recording)
     save_recordings_db(recordings_by_ip)
+
+
+def truncate_string(s, length):
+    if len(s) < length:
+        return s
+    sp = s[:length - 4].rfind(' ')
+    return s[:sp] + ' ...'
 
 
 def dump_recordings(recordings):
@@ -220,37 +268,16 @@ def dump_recordings(recordings):
                                           k['episode_season'],
                                           k['episode_number'],
                                           k['show_time'])):
-            title = smry['show_title']
-            if not title:
-                title = 'UNKNOWN'
-            if smry['episode_season'] or smry['episode_number']:
-                title += ' ['
-                if smry['episode_season']:
-                    title += 'Season: %s' % smry['episode_season']
-                if smry['episode_number']:
-                    title += ' Number: %s' % smry['episode_number']
-                title += ']'
-            print('Title:   %s' % title)
-
-            if smry['movie_year']:
-                print('Year:    %s' % smry['movie_year'])
-            if smry['episode_title']:
-                print('Episode: %s' % smry['episode_title'])
-            if smry['episode_description']:
-                print('Desc:    %s' % smry['episode_description'][:70])
-            if smry['episode_date']:
-                print('Airing:  %s' % smry['episode_date'])
-            if smry['event_title']:
-                print('Event:   %s' % smry['episode_title'])
-            if smry['event_description']:
-                print('Desc:    %s' % smry['event_description'][:70])
-            if smry['event_season']:
-                print('Season:  %s' % smry['event_season'])
-            print('Path:    %s' % smry['path'])
             titletag, filename = title_and_filename(smry)
-            print('Title Tag: %s' % titletag)
             print('Filename : %s' % filename)
-            print('\n')
+            print('Title Tag: %s' % titletag)
+
+            if smry['episode_description']:
+                print('Desc:      %s' % truncate_string(smry['episode_description'], 70))
+            if smry['event_description']:
+                print('Desc:      %s' % truncate_string(smry['event_description'], 70))
+            print('Path:      %s' % smry['path'])
+            print()
 
 
 def parse_args_and_settings():
@@ -260,6 +287,12 @@ def parse_args_and_settings():
         '--log_level',
         default='info',
         help='More verbose logging',
+    )
+    parser.add_argument(
+        '--verbose',
+        '-v',
+        action='store_true',
+        help='Equivalent to --log_level=debug',
     )
     parser.add_argument(
         '--tablo_ips',
@@ -276,19 +309,9 @@ def parse_args_and_settings():
         help='A directory to store Tablo recordings',
     )
     parser.add_argument(
-        '--delete_originals_after_downloading',
-        action='store_true',
-        help='Delete Tablo recordings after downloading them',
-    )
-    parser.add_argument(
         '--updatedb',
         action='store_true',
-        help='Update Tablo recordings DB. This may take a while.',
-    )
-    parser.add_argument(
-        '--createdb',
-        action='store_true',
-        help='Create/update Tablo recordings DB. This may take a while.',
+        help='Create/Update Tablo recordings DB.',
     )
     parser.add_argument(
         '--dump',
@@ -301,36 +324,55 @@ def parse_args_and_settings():
         help='Display details of a Tablo recording.',
     )
     parser.add_argument(
-        '--test_flow',
+        '--download_recording',
+        '--download',
         action='store_true',
-        help='Try downloading from a Tablo server',
+        help='Download a Tablo recording.',
+    )
+    parser.add_argument(
+        '--dry_run',
+        action='store_true',
+        help='Display what would be done without updating anything.',
+    )
+    parser.add_argument(
+        '--overwrite',
+        action='store_true',
+        help='Overwrite existing downloads.',
+    )
+    parser.add_argument(
+        '--delete_originals_after_downloading',
+        action='store_true',
+        help='Delete Tablo recordings after successfully downloading them',
     )
     args = parser.parse_args()
     args_dict = vars(args)
     settings = load_settings()
     for setting in settings:
-        if setting in args_dict and args_dict[setting] is None:
+        if setting in args_dict:
             args_dict[setting] = settings[setting]
     return args
 
 
 def main():
     args = parse_args_and_settings()
+    if args.dry_run or args.verbose:
+        vars(args)['log_level'] = 'debug'
     LOGGER.setLevel(getattr(logging, args.log_level.upper()))
-    LOGGER.debug('Log level [%s]', args.log_level.upper())
+    LOGGER.debug('Log level [%s]', args.log_level)
 
-    if args.createdb or args.updatedb:
+    if args.updatedb:
         create_or_update_recordings_database(args)
 
     if args.recording_details:
-        pprint.pprint(apis.recording_details(recording_id=args.recording_id, ip=args.tablo_ips))
+        pprint.pprint(apis.recording_details(
+                recording_id=args.recording_id, ip=args.tablo_ips))
 
     if args.dump:
         recordings = load_recordings_db()
         dump_recordings(recordings)
 
-    if args.test_flow:
-        test_flow(args)
+    if args.download_recording:
+        download_recording(args)
         return
 
 

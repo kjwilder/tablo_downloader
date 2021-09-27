@@ -8,7 +8,7 @@ setup(
   description='Tablo download utilities',
   license='UNLICENSE',
   author='Ken Wilder',
-  keywords=['tablo'],
+  keywords=['tablo', 'api', 'download'],
   url='https://github.com/kjwilder/tablo_downloader',
   packages=['tablo_downloader'],
   install_requires=["requests"],

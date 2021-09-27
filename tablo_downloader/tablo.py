@@ -295,6 +295,10 @@ def parse_args_and_settings():
         help='Equivalent to --log_level=debug',
     )
     parser.add_argument(
+        '--local_ips',
+        action='store_true',
+        help='Display the IPs of Tablo devices on a local network')
+    parser.add_argument(
         '--tablo_ips',
         '--ips',
         '--ip',
@@ -359,6 +363,9 @@ def main():
         vars(args)['log_level'] = 'debug'
     LOGGER.setLevel(getattr(logging, args.log_level.upper()))
     LOGGER.debug('Log level [%s]', args.log_level)
+
+    if args.local_ips:
+        print(','.join(local_ips()))
 
     if args.updatedb:
         create_or_update_recordings_database(args)

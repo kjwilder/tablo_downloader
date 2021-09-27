@@ -25,9 +25,12 @@ Running the install will create two programs, `tldl` (Tablo downloader) and
   IPs of your Tablo device(s) automatically.
 
 ### Typical Usage
-- `tldl --updatedb` - Create/update a database of tablo recordings. This takes
-   several minutes to run initially, but afterwards it runs quickly.
-- `tldl --dump` - Generate a summary of every recording, including recording IDs.
+- `tldl --local_ips` - Print the IPs of any local Tablo devices.
+- `tldl --tablo_ips 192.168.1.25 --updatedb` - Create/update a database of
+  current tablo recordings. This takes several minutes to run initially
+  but afterwards it runs quickly.
+- `tldl --tablo_ips 192.168.1.25 --dump` - Print out a readable summary of
+  every Tablo recording, including recording IDs.
 - `tldl --download_recording --recording_id /recordings/sports/events/464898
   --recordings_directory /some/directory --tablo_ips 192.168.1.25` - Download a
   Tablo recording.

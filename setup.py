@@ -11,7 +11,7 @@ setup(
   keywords=['tablo', 'api', 'download'],
   url='https://github.com/kjwilder/tablo_downloader',
   packages=['tablo_downloader'],
-  install_requires=["requests"],
+  install_requires=[],
   entry_points={"console_scripts": [
           'tldl = tablo_downloader.tablo:main',
           'tldlapis = tablo_downloader.apis:main']},

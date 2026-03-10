@@ -1,6 +1,7 @@
+import json
 import logging
-import requests
-import urllib
+import subprocess
+import urllib.parse
 
 LOGGER = logging.getLogger(__name__)
 # LOGGER.setLevel(logging.DEBUG)
@@ -28,34 +29,47 @@ SRVR_INFORMATION_URL = 'http://{ip}:%s/server/info' % TABLO_INFO_PORT
 SRVR_CAPABILITIES_URL = 'http://{ip}:%s/server/capabilities' % TABLO_INFO_PORT
 
 
-def call_api(url, method="GET", output="json"):
+def call_api(url, method="GET", output="json", timeout=30):
     LOGGER.debug('[%s] [%s] [%s]', url, method, output)
-    requester = getattr(requests, method.lower())
 
+    cmd = ['curl', '-s', '-X', method, '--connect-timeout', str(timeout),
+           '-w', '\n%{http_code}', url]
     try:
-        req = requester(url)
+        result = subprocess.run(cmd, capture_output=True, text=True,
+                                timeout=timeout + 5)
     except Exception as e:
         return {
             'error': 'API call [%s] failed' % url,
             'exception': e
         }
 
-    if req.status_code >= 300:
+    if result.returncode != 0:
         return {
             'error': 'API call [%s] failed' % url,
-            'status_code': req.status_code
+            'details': result.stderr
+        }
+
+    # Split the body from the status code appended by -w
+    parts = result.stdout.rsplit('\n', 1)
+    body = parts[0]
+    status_code = int(parts[1]) if len(parts) > 1 else 0
+
+    if status_code >= 300:
+        return {
+            'error': 'API call [%s] failed' % url,
+            'status_code': status_code
         }
 
     if output == "json":
         try:
-            res = req.json()
+            res = json.loads(body)
         except Exception as e:
             res = {
-                'error': 'API [%s] invalid json [%s]' % (url, req.text),
+                'error': 'API [%s] invalid json [%s]' % (url, body),
                 'exception': e
             }
     elif output == "text":
-        res = req.text
+        res = body
     else:
         res = {'error': 'API [%s] unknown format [%s]' % (url, output)}
     LOGGER.debug('API [%s] result:\n%s', url, res)

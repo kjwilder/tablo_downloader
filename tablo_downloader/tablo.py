@@ -170,6 +170,7 @@ def download_recording(args):
         return
 
     mp4_filename = os.path.join(args.recordings_directory, filename)
+    LOGGER.info(f'MP4 Filename {mp4_filename}')
     if args.dry_run:
         if os.path.exists(mp4_filename):
             if args.overwrite:
@@ -194,22 +195,24 @@ def download_recording(args):
     m3u_data = apis.playlist_m3u(playlist)
     if not isinstance(m3u_data, str):  # Some error occurred.
         LOGGER.error(m3u_data)
-        return
+        raise ValueError(f'm3u data [{m3u_data}] is not a string')
 
     m3u_file = tempfile.NamedTemporaryFile(mode='w', delete=False)
     m3u_filename = m3u_file.name
     m3u_file.write(m3u_data)
     m3u_file.close()
+    LOGGER.info(f'Wrote m3u data to {m3u_filename}')
 
     cmd = [
         'ffmpeg', '-hide_banner', '-loglevel', 'warning',
-        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto', '-i',
+        '-protocol_whitelist', 'file,http,https,tcp,tls,crypto', '-f', 'hls', '-i',
         m3u_filename, '-c', 'copy', '-metadata', f'title={title}',
         mp4_filename
     ]
-    LOGGER.debug('Running [%s]', ' '.join(cmd))
-
+    LOGGER.info('Running [%s]', ' '.join(cmd))
     status = subprocess.run(cmd)
+    LOGGER.info('Ran [%s]', ' '.join(cmd))
+
     if status.returncode == 0:
         LOGGER.info('Successfully Downloaded [%s]', mp4_filename)
         if args.delete_originals_after_downloading:
@@ -265,8 +268,8 @@ def dump_recordings(recordings):
     for ip in sorted(summaries):
         for smry in sorted(summaries[ip].values(),
                            key=lambda k: (k['show_title'],
-                                          k['episode_season'],
-                                          k['episode_number'],
+                                          k['episode_season'] or 1,
+                                          k['episode_number'] or 1,
                                           k['show_time'])):
             titletag, filename = title_and_filename(smry)
             print('Filename : %s' % filename)
